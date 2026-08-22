@@ -1,0 +1,11 @@
+*.env
+*.log
+*.pid
+*.bak
+*.bak-*
+.DS_Store
+node_modules/
+memory/
+MEMORY.md
+secrets/
+
