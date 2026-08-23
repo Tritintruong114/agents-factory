@@ -53,8 +53,13 @@ When using this skill from the `agents-factory` repo, prefer the bundled generic
 
 - `templates/zalo-polling-bridge.mjs`: generic Zalo Bot API long-poll bridge.
 - `templates/zalo-bot.env.example`: non-secret env template for one bot-agent mapping.
+- `scripts/install-zalo-bridge.sh`: one-shot installer for a per-bot bridge instance.
+- `scripts/zalo-bridge-status.sh`, `scripts/zalo-bridge-restart.sh`, `scripts/zalo-bridge-logs.sh`: per-bot operations scripts.
+- `scripts/test-agent-session.sh`, `scripts/test-zalo-api-json.sh`, `scripts/test-zalo-fixture.sh`: no-send validation scripts.
+- `systemd/zalo-polling-bridge.service.template`: service template for production persistence.
+- `fixtures/zalo-getupdates-message.json`: sample getUpdates payload for parser tests.
 
-Copy the env template to a private path on the target instance, fill in the real token locally, then run the bridge template with `ZALO_BRIDGE_ENV_FILE=/path/to/env`.
+Copy the env template to a private path on the target instance, fill in the real token locally, then use `scripts/install-zalo-bridge.sh` to copy/start the bridge.
 
 ## Required Intake
 

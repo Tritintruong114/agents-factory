@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenClaw Zalo polling bridge __BOT_KEY__ -> __AGENT_ID__
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=ZALO_BRIDGE_ENV_FILE=__ENV_FILE__
+ExecStart=/usr/bin/env node __BRIDGE_FILE__
+Restart=always
+RestartSec=5
+StandardOutput=append:__LOG_FILE__
+StandardError=append:__LOG_FILE__
+
+[Install]
+WantedBy=multi-user.target
