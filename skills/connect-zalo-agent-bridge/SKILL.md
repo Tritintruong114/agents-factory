@@ -47,6 +47,15 @@ The reviewed bridge pattern:
 - Parse the final OpenClaw JSON response from stdout.
 - Split replies into <= 2000-character chunks before calling Zalo `sendMessage`.
 
+## Bundled Templates
+
+When using this skill from the `agents-factory` repo, prefer the bundled generic bridge template instead of reconstructing the bridge from memory:
+
+- `templates/zalo-polling-bridge.mjs`: generic Zalo Bot API long-poll bridge.
+- `templates/zalo-bot.env.example`: non-secret env template for one bot-agent mapping.
+
+Copy the env template to a private path on the target instance, fill in the real token locally, then run the bridge template with `ZALO_BRIDGE_ENV_FILE=/path/to/env`.
+
 ## Required Intake
 
 Before changing anything, determine the intended mapping. Ask the user if any value is missing and cannot be discovered safely:

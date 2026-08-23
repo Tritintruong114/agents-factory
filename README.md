@@ -14,6 +14,10 @@ Use this repo to keep those reusable building blocks portable between OpenClaw i
 
 - `skills/connect-zalo-agent-bridge/`  
   Reusable OpenClaw skill for connecting one or more Zalo bot bridge instances to OpenClaw agents. The default model is:
+- `skills/connect-zalo-agent-bridge/templates/zalo-polling-bridge.mjs`  
+  Generic polling bridge source based on the working local bridge. Configure it with a private env file on each target instance.
+- `skills/connect-zalo-agent-bridge/templates/zalo-bot.env.example`  
+  Non-secret env template for one Zalo bot to one OpenClaw agent.
 
 ```text
 1 Zalo bot = 1 OpenClaw agent = 1 isolated bridge process
@@ -28,6 +32,23 @@ Bot C -> Agent C
 ```
 
 Each bot should have its own token/env file, bridge process, PID, and log.
+
+## Use The Bridge Template
+
+On a target OpenClaw instance:
+
+```bash
+cp skills/connect-zalo-agent-bridge/templates/zalo-bot.env.example /home/node/.openclaw/secrets/zalo-b2b-bot.env
+```
+
+Fill in the private token and target agent id in the env file. Then run:
+
+```bash
+ZALO_BRIDGE_ENV_FILE=/home/node/.openclaw/secrets/zalo-b2b-bot.env \
+  node skills/connect-zalo-agent-bridge/templates/zalo-polling-bridge.mjs
+```
+
+For group chats, set `ZALO_REQUIRE_MENTION='true'` and configure `ZALO_MENTION_TRIGGERS` if only mentioned messages should enter the agent session.
 
 ## Install A Skill From This Repo
 
