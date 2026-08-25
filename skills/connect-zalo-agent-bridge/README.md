@@ -44,6 +44,7 @@ The installer creates:
 /home/node/.openclaw/zalo-kien-truc-su-bridge.pid
 /home/node/.openclaw/logs/zalo-kien-truc-su-bridge.log
 /home/node/.openclaw/zalo-kien-truc-su-bridge.offset.json
+/home/node/.openclaw/zalo-kien-truc-su-bridge.undelivered.jsonl
 /home/node/.openclaw/zalo-kien-truc-su-bridge.config
 /home/node/.openclaw/systemd/zalo-bridge-kien-truc-su.service
 ```
@@ -57,6 +58,8 @@ The installer creates:
 ```
 
 Each command targets exactly one bot key.
+
+The bridge logs `agent_completed` after OpenClaw returns a reply and `reply_sent` only after all Zalo chunks are accepted. If outbound Zalo delivery fails, it logs `send_attempt_failed`, retries according to `ZALO_SEND_ATTEMPTS`, and appends the failed chunk to the per-bot `.undelivered.jsonl` file after the final attempt.
 
 ## Tests That Do Not Send Messages
 

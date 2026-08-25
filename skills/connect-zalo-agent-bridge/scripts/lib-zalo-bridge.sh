@@ -39,6 +39,7 @@ load_config() {
   : "${PID_FILE:?missing PID_FILE in config}"
   : "${LOG_FILE:?missing LOG_FILE in config}"
   : "${CHECKPOINT_FILE:?missing CHECKPOINT_FILE in config}"
+  UNDELIVERED_FILE="${UNDELIVERED_FILE:-$OPENCLAW_HOME/zalo-$BOT_KEY-bridge.undelivered.jsonl}"
 }
 
 is_pid_running() {
@@ -57,6 +58,7 @@ start_bridge_from_config() {
   : "${PID_FILE:?}"
   : "${LOG_FILE:?}"
   : "${CHECKPOINT_FILE:?}"
+  : "${UNDELIVERED_FILE:?}"
 
   local pid
   pid="$(pid_from_file "$PID_FILE")"
@@ -68,6 +70,7 @@ start_bridge_from_config() {
   nohup env \
     ZALO_BRIDGE_ENV_FILE="$ENV_FILE" \
     ZALO_CHECKPOINT_FILE="$CHECKPOINT_FILE" \
+    ZALO_UNDELIVERED_FILE="$UNDELIVERED_FILE" \
     node "$BRIDGE_FILE" >>"$LOG_FILE" 2>&1 &
   pid="$!"
   printf '%s\n' "$pid" >"$PID_FILE"

@@ -16,6 +16,7 @@ Creates one isolated Zalo bridge instance:
   /home/node/.openclaw/zalo-<bot-key>-bridge.pid
   /home/node/.openclaw/logs/zalo-<bot-key>-bridge.log
   /home/node/.openclaw/zalo-<bot-key>-bridge.offset.json
+  /home/node/.openclaw/zalo-<bot-key>-bridge.undelivered.jsonl
 
 Never put real tokens in git. Keep the env file private and chmod 600.
 USAGE
@@ -89,6 +90,7 @@ bridge_file="$bridge_dir/zalo-$bot_key-bridge.mjs"
 pid_file="$OPENCLAW_HOME/zalo-$bot_key-bridge.pid"
 log_file="$logs_dir/zalo-$bot_key-bridge.log"
 checkpoint_file="$OPENCLAW_HOME/zalo-$bot_key-bridge.offset.json"
+undelivered_file="$OPENCLAW_HOME/zalo-$bot_key-bridge.undelivered.jsonl"
 config_file="$(config_file_for "$bot_key")"
 service_file="$systemd_dir/zalo-bridge-$bot_key.service"
 
@@ -105,6 +107,7 @@ BRIDGE_FILE='$bridge_file'
 PID_FILE='$pid_file'
 LOG_FILE='$log_file'
 CHECKPOINT_FILE='$checkpoint_file'
+UNDELIVERED_FILE='$undelivered_file'
 SERVICE_FILE='$service_file'
 EOF
 chmod 600 "$config_file"
@@ -114,6 +117,8 @@ sed \
   -e "s#__AGENT_ID__#$agent_id#g" \
   -e "s#__ENV_FILE__#$env_file#g" \
   -e "s#__BRIDGE_FILE__#$bridge_file#g" \
+  -e "s#__CHECKPOINT_FILE__#$checkpoint_file#g" \
+  -e "s#__UNDELIVERED_FILE__#$undelivered_file#g" \
   -e "s#__LOG_FILE__#$log_file#g" \
   "$SKILL_DIR/systemd/zalo-polling-bridge.service.template" >"$service_file"
 
@@ -122,6 +127,7 @@ info "bridge=$bridge_file"
 info "env=$env_file"
 info "pid=$pid_file"
 info "log=$log_file"
+info "undelivered=$undelivered_file"
 info "service_template_rendered=$service_file"
 
 if [ "$start_after_install" = "true" ]; then

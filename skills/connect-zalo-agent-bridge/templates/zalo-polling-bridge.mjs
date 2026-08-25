@@ -83,9 +83,13 @@ const agentId = process.env.OPENCLAW_AGENT_ID;
 const botKey = process.env.ZALO_BOT_KEY || agentId || 'zalo';
 const label = process.env.ZALO_BRIDGE_LABEL || botKey;
 const pollTimeout = Number(process.env.ZALO_POLL_TIMEOUT_SECONDS || 30);
+const apiTimeout = Number(process.env.ZALO_API_TIMEOUT_SECONDS || pollTimeout + 15);
+const sendTimeout = Number(process.env.ZALO_SEND_TIMEOUT_SECONDS || 15);
+const sendAttempts = Number(process.env.ZALO_SEND_ATTEMPTS || 3);
 const agentTimeout = Number(process.env.OPENCLAW_AGENT_TIMEOUT_SECONDS || 120);
 const chunkLimit = Number(process.env.ZALO_REPLY_CHUNK_LIMIT || 2000);
 const checkpointFile = process.env.ZALO_CHECKPOINT_FILE || '';
+const undeliveredFile = process.env.ZALO_UNDELIVERED_FILE || '';
 const requireMention = /^(1|true|yes)$/i.test(process.env.ZALO_REQUIRE_MENTION || '');
 const mentionTriggers = (process.env.ZALO_MENTION_TRIGGERS || '')
   .split(',')
@@ -110,6 +114,16 @@ function requireValue(name, value) {
 requireValue('ZALO_BOT_TOKEN', token);
 requireValue('OPENCLAW_AGENT_ID', agentId);
 requireValue('ZALO_BOT_KEY', botKey);
+for (const [name, value] of [
+  ['ZALO_POLL_TIMEOUT_SECONDS', pollTimeout],
+  ['ZALO_API_TIMEOUT_SECONDS', apiTimeout],
+  ['ZALO_SEND_TIMEOUT_SECONDS', sendTimeout],
+  ['ZALO_SEND_ATTEMPTS', sendAttempts],
+  ['OPENCLAW_AGENT_TIMEOUT_SECONDS', agentTimeout],
+  ['ZALO_REPLY_CHUNK_LIMIT', chunkLimit],
+]) {
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number`);
+}
 if (requireMention && mentionTriggers.length === 0) {
   throw new Error('ZALO_REQUIRE_MENTION is enabled but ZALO_MENTION_TRIGGERS is empty');
 }
@@ -146,34 +160,49 @@ function compareIds(a, b) {
 }
 
 async function api(method, body) {
-  const res = await fetch(`${base}/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  const contentType = res.headers.get('content-type') || '';
-  const text = await res.text();
-  if (!contentType.includes('application/json')) {
-    const error = new Error(`Zalo ${method} returned non-JSON`);
-    error.status = res.status;
-    error.preview = text.slice(0, 120);
-    throw error;
-  }
+  const controller = new AbortController();
+  const timeoutMs = (method === 'sendMessage' ? sendTimeout : apiTimeout) * 1000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const json = JSON.parse(text);
-    if (!res.ok) {
-      const error = new Error(`Zalo ${method} HTTP ${res.status}`);
+    const res = await fetch(`${base}/${method}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+      signal: controller.signal,
+    });
+    const contentType = res.headers.get('content-type') || '';
+    const text = await res.text();
+    if (!contentType.includes('application/json')) {
+      const error = new Error(`Zalo ${method} returned non-JSON`);
       error.status = res.status;
-      error.response = json;
+      error.preview = text.slice(0, 120);
       throw error;
     }
-    return json;
+    try {
+      const json = JSON.parse(text);
+      if (!res.ok) {
+        const error = new Error(`Zalo ${method} HTTP ${res.status}`);
+        error.status = res.status;
+        error.response = json;
+        throw error;
+      }
+      return json;
+    } catch (error) {
+      if (error.status) throw error;
+      const parseError = new Error(`Zalo ${method} invalid JSON`);
+      parseError.status = res.status;
+      parseError.preview = text.slice(0, 120);
+      throw parseError;
+    }
   } catch (error) {
-    if (error.status) throw error;
-    const parseError = new Error(`Zalo ${method} invalid JSON`);
-    parseError.status = res.status;
-    parseError.preview = text.slice(0, 120);
-    throw parseError;
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error(`Zalo ${method} timed out after ${timeoutMs}ms`);
+      timeoutError.status = 'timeout';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -243,6 +272,52 @@ function chunkReply(reply) {
   return chunks;
 }
 
+function retryDelayMs(attempt) {
+  return Math.min(10000, 1000 * 2 ** Math.max(0, attempt - 1));
+}
+
+function recordUndelivered(fields) {
+  if (!undeliveredFile) return;
+  const dir = undeliveredFile.slice(0, undeliveredFile.lastIndexOf('/'));
+  if (dir) fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(undeliveredFile, `${JSON.stringify({ ts: new Date().toISOString(), ...fields })}\n`);
+}
+
+async function sendReplyChunk(chatId, text, index, total, updateIdValue) {
+  let lastError;
+  for (let attempt = 1; attempt <= sendAttempts; attempt++) {
+    try {
+      const sent = await api('sendMessage', { chat_id: chatId, text });
+      if (!sent.ok) throw new Error(`sendMessage returned ok=false: ${JSON.stringify(sent)}`);
+      return sent;
+    } catch (error) {
+      lastError = error;
+      log('warn', 'send_attempt_failed', {
+        chatId,
+        updateId: updateIdValue || undefined,
+        chunk: index + 1,
+        chunks: total,
+        attempt,
+        error: error.message,
+        status: error.status || undefined,
+        responseCode: error.response?.error_code,
+        preview: error.preview,
+      });
+      if (attempt < sendAttempts) await sleep(retryDelayMs(attempt));
+    }
+  }
+  recordUndelivered({
+    chatId,
+    updateId: updateIdValue || undefined,
+    chunk: index + 1,
+    chunks: total,
+    chars: text.length,
+    text,
+    error: lastError?.message,
+  });
+  throw lastError;
+}
+
 async function handleUpdate(update) {
   const id = updateId(update);
   if (id && lastUpdateId && compareIds(id, lastUpdateId) <= 0) return;
@@ -284,14 +359,14 @@ async function handleUpdate(update) {
 
     const reply = agentAnswer(stdout);
     if (!reply || reply === 'NO_REPLY') {
+      log('info', 'agent_no_reply', { chatId, updateId: id || undefined });
       if (id) saveCheckpoint(id);
       return;
     }
 
     const chunks = chunkReply(reply);
-    for (const chunk of chunks) {
-      const sent = await api('sendMessage', { chat_id: chatId, text: chunk });
-      if (!sent.ok) throw new Error(`sendMessage failed: ${JSON.stringify(sent)}`);
+    for (let i = 0; i < chunks.length; i++) {
+      await sendReplyChunk(chatId, chunks[i], i, chunks.length, id);
     }
     log('info', 'reply_sent', { chatId, updateId: id || undefined, chunks: chunks.length, chars: reply.length });
     if (id) saveCheckpoint(id);
@@ -312,8 +387,12 @@ function backoffMs(error, consecutiveErrors) {
 log('info', 'polling_started', {
   envFile: envFile || undefined,
   pollTimeout,
+  apiTimeout,
+  sendTimeout,
+  sendAttempts,
   agentTimeout,
   checkpointFile: checkpointFile || undefined,
+  undeliveredFile: undeliveredFile || undefined,
   requireMention,
 });
 
