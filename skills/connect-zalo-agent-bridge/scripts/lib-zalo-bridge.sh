@@ -39,6 +39,7 @@ load_config() {
   : "${PID_FILE:?missing PID_FILE in config}"
   : "${LOG_FILE:?missing LOG_FILE in config}"
   : "${CHECKPOINT_FILE:?missing CHECKPOINT_FILE in config}"
+  OUTBOX_DIR="${OUTBOX_DIR:-$OPENCLAW_HOME/zalo-$BOT_KEY-bridge.outbox}"
   UNDELIVERED_FILE="${UNDELIVERED_FILE:-$OPENCLAW_HOME/zalo-$BOT_KEY-bridge.undelivered.jsonl}"
 }
 
@@ -58,6 +59,7 @@ start_bridge_from_config() {
   : "${PID_FILE:?}"
   : "${LOG_FILE:?}"
   : "${CHECKPOINT_FILE:?}"
+  : "${OUTBOX_DIR:?}"
   : "${UNDELIVERED_FILE:?}"
 
   local pid
@@ -66,10 +68,11 @@ start_bridge_from_config() {
     die "bridge already running for $BOT_KEY pid=$pid"
   fi
 
-  mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$PID_FILE")" "$(dirname "$CHECKPOINT_FILE")"
+  mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$PID_FILE")" "$(dirname "$CHECKPOINT_FILE")" "$OUTBOX_DIR/pending" "$OUTBOX_DIR/failed"
   nohup env \
     ZALO_BRIDGE_ENV_FILE="$ENV_FILE" \
     ZALO_CHECKPOINT_FILE="$CHECKPOINT_FILE" \
+    ZALO_OUTBOX_DIR="$OUTBOX_DIR" \
     ZALO_UNDELIVERED_FILE="$UNDELIVERED_FILE" \
     node "$BRIDGE_FILE" >>"$LOG_FILE" 2>&1 &
   pid="$!"

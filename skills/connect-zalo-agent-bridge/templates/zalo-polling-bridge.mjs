@@ -86,6 +86,11 @@ const pollTimeout = Number(process.env.ZALO_POLL_TIMEOUT_SECONDS || 30);
 const apiTimeout = Number(process.env.ZALO_API_TIMEOUT_SECONDS || pollTimeout + 15);
 const sendTimeout = Number(process.env.ZALO_SEND_TIMEOUT_SECONDS || 15);
 const sendAttempts = Number(process.env.ZALO_SEND_ATTEMPTS || 3);
+const outboxDir = process.env.ZALO_OUTBOX_DIR || '';
+const outboxMaxAttempts = Number(process.env.ZALO_OUTBOX_MAX_ATTEMPTS || 20);
+const outboxRetryBaseSeconds = Number(process.env.ZALO_OUTBOX_RETRY_BASE_SECONDS || 30);
+const outboxRetryMaxSeconds = Number(process.env.ZALO_OUTBOX_RETRY_MAX_SECONDS || 300);
+const outboxIdleSeconds = Number(process.env.ZALO_OUTBOX_IDLE_SECONDS || 5);
 const agentTimeout = Number(process.env.OPENCLAW_AGENT_TIMEOUT_SECONDS || 120);
 const chunkLimit = Number(process.env.ZALO_REPLY_CHUNK_LIMIT || 2000);
 const checkpointFile = process.env.ZALO_CHECKPOINT_FILE || '';
@@ -119,6 +124,10 @@ for (const [name, value] of [
   ['ZALO_API_TIMEOUT_SECONDS', apiTimeout],
   ['ZALO_SEND_TIMEOUT_SECONDS', sendTimeout],
   ['ZALO_SEND_ATTEMPTS', sendAttempts],
+  ['ZALO_OUTBOX_MAX_ATTEMPTS', outboxMaxAttempts],
+  ['ZALO_OUTBOX_RETRY_BASE_SECONDS', outboxRetryBaseSeconds],
+  ['ZALO_OUTBOX_RETRY_MAX_SECONDS', outboxRetryMaxSeconds],
+  ['ZALO_OUTBOX_IDLE_SECONDS', outboxIdleSeconds],
   ['OPENCLAW_AGENT_TIMEOUT_SECONDS', agentTimeout],
   ['ZALO_REPLY_CHUNK_LIMIT', chunkLimit],
 ]) {
@@ -130,6 +139,8 @@ if (requireMention && mentionTriggers.length === 0) {
 
 const base = `https://bot-api.zaloplatforms.com/bot${token}`;
 const inFlight = new Set();
+let outboxDrainRunning = false;
+let outboxDrainRequested = false;
 let lastUpdateId = loadCheckpoint();
 
 function loadCheckpoint() {
@@ -276,11 +287,141 @@ function retryDelayMs(attempt) {
   return Math.min(10000, 1000 * 2 ** Math.max(0, attempt - 1));
 }
 
+function outboxBackoffMs(attempt) {
+  const seconds = Math.min(outboxRetryMaxSeconds, outboxRetryBaseSeconds * 2 ** Math.max(0, attempt - 1));
+  return seconds * 1000;
+}
+
 function recordUndelivered(fields) {
   if (!undeliveredFile) return;
   const dir = undeliveredFile.slice(0, undeliveredFile.lastIndexOf('/'));
   if (dir) fs.mkdirSync(dir, { recursive: true });
   fs.appendFileSync(undeliveredFile, `${JSON.stringify({ ts: new Date().toISOString(), ...fields })}\n`);
+}
+
+function outboxPath(name) {
+  return `${outboxDir}/${name}`;
+}
+
+function ensureOutbox() {
+  if (!outboxDir) return false;
+  fs.mkdirSync(outboxPath('pending'), { recursive: true });
+  fs.mkdirSync(outboxPath('processing'), { recursive: true });
+  fs.mkdirSync(outboxPath('failed'), { recursive: true });
+  return true;
+}
+
+function safeFilePart(value) {
+  return String(value || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80);
+}
+
+function outboxJobPath(jobId) {
+  return outboxPath(`pending/${safeFilePart(jobId)}.json`);
+}
+
+function failedJobPath(jobId) {
+  return outboxPath(`failed/${safeFilePart(jobId)}.json`);
+}
+
+function writeJsonAtomic(path, data) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
+  fs.renameSync(tmp, path);
+}
+
+function readJsonFile(path) {
+  return JSON.parse(fs.readFileSync(path, 'utf8'));
+}
+
+function enqueueOutboxReply({ chatId, updateId: updateIdValue, chunks, replyChars }) {
+  if (!ensureOutbox()) return '';
+  const jobId = updateIdValue
+    ? `${botKey}-${chatId}-${updateIdValue}`
+    : `${botKey}-${chatId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const path = outboxJobPath(jobId);
+  if (fs.existsSync(path)) {
+    log('warn', 'outbox_duplicate_skipped', { chatId, updateId: updateIdValue || undefined, jobId });
+    return jobId;
+  }
+  const now = new Date().toISOString();
+  writeJsonAtomic(path, {
+    version: 1,
+    jobId,
+    botKey,
+    agentId,
+    chatId,
+    updateId: updateIdValue || '',
+    chunks,
+    replyChars,
+    nextChunkIndex: 0,
+    attempts: 0,
+    createdAt: now,
+    updatedAt: now,
+    nextAttemptAt: now,
+  });
+  log('info', 'outbox_enqueued', { chatId, updateId: updateIdValue || undefined, jobId, chunks: chunks.length, chars: replyChars });
+  requestOutboxDrain();
+  return jobId;
+}
+
+function listPendingOutboxFiles() {
+  if (!ensureOutbox()) return [];
+  return fs.readdirSync(outboxPath('pending'))
+    .filter(name => name.endsWith('.json'))
+    .sort()
+    .map(name => outboxPath(`pending/${name}`));
+}
+
+function claimOutboxFile(file) {
+  const name = file.slice(file.lastIndexOf('/') + 1);
+  const claimed = outboxPath(`processing/${process.pid}-${Date.now()}-${name}`);
+  try {
+    fs.renameSync(file, claimed);
+    return claimed;
+  } catch (error) {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  }
+}
+
+function recoverProcessingOutboxJobs() {
+  if (!ensureOutbox()) return;
+  for (const name of fs.readdirSync(outboxPath('processing')).filter(name => name.endsWith('.json')).sort()) {
+    const source = outboxPath(`processing/${name}`);
+    const recoveredName = name.replace(/^\d+-\d+-/, '');
+    const target = outboxPath(`pending/${recoveredName}`);
+    if (fs.existsSync(target)) {
+      log('warn', 'outbox_recovery_skipped_duplicate', { source, target });
+      continue;
+    }
+    fs.renameSync(source, target);
+    log('warn', 'outbox_recovered_processing_job', { source, target });
+  }
+}
+
+function pendingPathForProcessingFile(file, job = {}) {
+  const name = file.slice(file.lastIndexOf('/') + 1).replace(/^\d+-\d+-/, '').replace(/\.json$/, '');
+  return outboxJobPath(job.jobId || name);
+}
+
+function releaseOutboxToPending(file, job) {
+  const target = pendingPathForProcessingFile(file, job);
+  if (target === file) {
+    writeJsonAtomic(file, job);
+    return;
+  }
+  if (fs.existsSync(target)) {
+    log('warn', 'outbox_release_skipped_duplicate', { file, target, jobId: job.jobId });
+    return;
+  }
+  writeJsonAtomic(target, job);
+  fs.unlinkSync(file);
+}
+
+function moveOutboxToFailed(file, job) {
+  const failed = failedJobPath(job.jobId || file.slice(file.lastIndexOf('/') + 1, -5));
+  writeJsonAtomic(failed, job);
+  fs.unlinkSync(file);
 }
 
 async function sendReplyChunk(chatId, text, index, total, updateIdValue) {
@@ -316,6 +457,109 @@ async function sendReplyChunk(chatId, text, index, total, updateIdValue) {
     error: lastError?.message,
   });
   throw lastError;
+}
+
+async function deliverOutboxJob(file) {
+  const job = readJsonFile(file);
+  const due = Date.parse(job.nextAttemptAt || '');
+  if (Number.isFinite(due) && due > Date.now()) {
+    releaseOutboxToPending(file, job);
+    return false;
+  }
+
+  job.attempts = Number(job.attempts || 0) + 1;
+  job.updatedAt = new Date().toISOString();
+  writeJsonAtomic(file, job);
+
+  try {
+    const chunks = Array.isArray(job.chunks) ? job.chunks : [];
+    for (let i = Number(job.nextChunkIndex || 0); i < chunks.length; i++) {
+      await sendReplyChunk(job.chatId, chunks[i], i, chunks.length, job.updateId);
+      job.nextChunkIndex = i + 1;
+      job.updatedAt = new Date().toISOString();
+      writeJsonAtomic(file, job);
+    }
+    fs.unlinkSync(file);
+    log('info', 'reply_sent', {
+      chatId: job.chatId,
+      updateId: job.updateId || undefined,
+      jobId: job.jobId,
+      chunks: chunks.length,
+      chars: job.replyChars,
+      outboxAttempts: job.attempts,
+    });
+    return true;
+  } catch (error) {
+    job.lastError = error.message;
+    job.lastStatus = error.status || undefined;
+    job.lastResponseCode = error.response?.error_code;
+    job.lastPreview = error.preview;
+    job.updatedAt = new Date().toISOString();
+
+    if (job.attempts >= outboxMaxAttempts) {
+      job.failedAt = job.updatedAt;
+      moveOutboxToFailed(file, job);
+      recordUndelivered({
+        chatId: job.chatId,
+        updateId: job.updateId || undefined,
+        jobId: job.jobId,
+        chunks: Array.isArray(job.chunks) ? job.chunks.length : undefined,
+        nextChunkIndex: job.nextChunkIndex,
+        chars: job.replyChars,
+        attempts: job.attempts,
+        error: error.message,
+      });
+      log('error', 'outbox_delivery_failed_permanently', {
+        chatId: job.chatId,
+        updateId: job.updateId || undefined,
+        jobId: job.jobId,
+        attempts: job.attempts,
+        error: error.message,
+      });
+    } else {
+      job.nextAttemptAt = new Date(Date.now() + outboxBackoffMs(job.attempts)).toISOString();
+      releaseOutboxToPending(file, job);
+      log('warn', 'outbox_delivery_deferred', {
+        chatId: job.chatId,
+        updateId: job.updateId || undefined,
+        jobId: job.jobId,
+        attempts: job.attempts,
+        nextAttemptAt: job.nextAttemptAt,
+        error: error.message,
+      });
+    }
+    return false;
+  }
+}
+
+async function drainOutboxOnce() {
+  if (!outboxDir) return;
+  for (const file of listPendingOutboxFiles()) {
+    const claimed = claimOutboxFile(file);
+    if (!claimed) continue;
+    try {
+      await deliverOutboxJob(claimed);
+    } catch (error) {
+      log('error', 'outbox_job_read_failed', { file: claimed, error: error.message });
+    }
+  }
+}
+
+function requestOutboxDrain() {
+  if (!outboxDir) return;
+  outboxDrainRequested = true;
+}
+
+async function outboxWorker() {
+  if (!outboxDir || outboxDrainRunning) return;
+  outboxDrainRunning = true;
+  log('info', 'outbox_worker_started', { outboxDir, outboxMaxAttempts });
+  recoverProcessingOutboxJobs();
+  for (;;) {
+    outboxDrainRequested = false;
+    await drainOutboxOnce();
+    await sleep(outboxDrainRequested ? 100 : outboxIdleSeconds * 1000);
+  }
 }
 
 async function handleUpdate(update) {
@@ -365,10 +609,14 @@ async function handleUpdate(update) {
     }
 
     const chunks = chunkReply(reply);
-    for (let i = 0; i < chunks.length; i++) {
-      await sendReplyChunk(chatId, chunks[i], i, chunks.length, id);
+    if (outboxDir) {
+      enqueueOutboxReply({ chatId, updateId: id, chunks, replyChars: reply.length });
+    } else {
+      for (let i = 0; i < chunks.length; i++) {
+        await sendReplyChunk(chatId, chunks[i], i, chunks.length, id);
+      }
+      log('info', 'reply_sent', { chatId, updateId: id || undefined, chunks: chunks.length, chars: reply.length });
     }
-    log('info', 'reply_sent', { chatId, updateId: id || undefined, chunks: chunks.length, chars: reply.length });
     if (id) saveCheckpoint(id);
   } finally {
     inFlight.delete(guardKey);
@@ -390,6 +638,8 @@ log('info', 'polling_started', {
   apiTimeout,
   sendTimeout,
   sendAttempts,
+  outboxDir: outboxDir || undefined,
+  outboxMaxAttempts,
   agentTimeout,
   checkpointFile: checkpointFile || undefined,
   undeliveredFile: undeliveredFile || undefined,
@@ -397,6 +647,7 @@ log('info', 'polling_started', {
 });
 
 let consecutiveErrors = 0;
+if (outboxDir) outboxWorker().catch(error => log('error', 'outbox_worker_crashed', { error: error.message }));
 for (;;) {
   try {
     const response = await api('getUpdates', { timeout: String(pollTimeout) });

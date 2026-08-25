@@ -55,11 +55,12 @@ When using this skill from the `agents-factory` repo, prefer the bundled generic
 - `templates/zalo-bot.env.example`: non-secret env template for one bot-agent mapping.
 - `scripts/install-zalo-bridge.sh`: one-shot installer for a per-bot bridge instance.
 - `scripts/zalo-bridge-status.sh`, `scripts/zalo-bridge-restart.sh`, `scripts/zalo-bridge-logs.sh`: per-bot operations scripts.
+- `scripts/zalo-bridge-outbox.sh`, `scripts/zalo-bridge-replay-failed.sh`: inspect and requeue durable outbound reply jobs.
 - `scripts/test-agent-session.sh`, `scripts/test-zalo-api-json.sh`, `scripts/test-zalo-fixture.sh`: no-send validation scripts.
 - `systemd/zalo-polling-bridge.service.template`: service template for production persistence.
 - `fixtures/zalo-getupdates-message.json`: sample getUpdates payload for parser tests.
 
-Copy the env template to a private path on the target instance, fill in the real token locally, then use `scripts/install-zalo-bridge.sh` to copy/start the bridge. The template includes API timeouts, `sendMessage` retries, checkpointing, and a per-bot undelivered JSONL path so a generated agent reply is not silently lost when Zalo accepts inbound polling but fails on outbound delivery.
+Copy the env template to a private path on the target instance, fill in the real token locally, then use `scripts/install-zalo-bridge.sh` to copy/start the bridge. The template includes API timeouts, `sendMessage` retries, checkpointing, a durable per-bot outbound outbox, and a per-bot undelivered JSONL path so a generated agent reply is not silently lost when Zalo accepts inbound polling but fails on outbound delivery.
 
 ## Required Intake
 
@@ -153,6 +154,7 @@ Recommended naming:
 /home/node/.openclaw/zalo-<bot-key>-bridge.pid
 /home/node/.openclaw/logs/zalo-<bot-key>-bridge.log
 /home/node/.openclaw/zalo-<bot-key>-bridge.offset.json
+/home/node/.openclaw/zalo-<bot-key>-bridge.outbox/
 /home/node/.openclaw/zalo-<bot-key>-bridge.undelivered.jsonl
 ```
 
@@ -164,6 +166,9 @@ ZALO_BOT_KEY='<bot-key>'
 OPENCLAW_AGENT_ID='<agent-id>'
 ZALO_SEND_ATTEMPTS='3'
 ZALO_SEND_TIMEOUT_SECONDS='15'
+ZALO_OUTBOX_MAX_ATTEMPTS='20'
+ZALO_OUTBOX_RETRY_BASE_SECONDS='30'
+ZALO_OUTBOX_RETRY_MAX_SECONDS='300'
 ```
 
 Use bot-specific variable names only when reusing an existing env convention. Prefer the generic names above for new bot bridge instances.
@@ -192,7 +197,7 @@ Use this only if the user explicitly wants one process to manage all bots.
    - Ignoring empty text and `/start`.
    - JSON response parsing from OpenClaw CLI stdout.
    - 2000-character reply chunking.
-   - Outbound `sendMessage` retry/backoff and `ZALO_UNDELIVERED_FILE` capture.
+   - Durable outbound outbox, `sendMessage` retry/backoff, and `ZALO_UNDELIVERED_FILE` capture.
 6. Use `apply_patch` for manual edits.
 
 ## Public And Reuse Across Instances
@@ -334,8 +339,11 @@ openclaw skills verify connect-zalo-agent-bridge --card
 - `Unexpected token '<'` while parsing Zalo API response means the Zalo endpoint returned HTML instead of JSON. Check token validity, endpoint reachability, request method, and any upstream gateway/auth page.
 - `Command failed: openclaw agent ...` means the agent call failed or timed out. Check target agent id, available connectors, session key, and timeout.
 - Replies cut in Zalo usually mean chunking is not preserving message boundaries. Keep chunks under 2000 chars and split on paragraph/line/space boundaries.
-- `send_attempt_failed` means the agent already produced a reply but Zalo outbound delivery failed for one chunk. Check `status`, `responseCode`, and `preview`; the bridge retries before giving up.
-- If a reply is visible in the OpenClaw dashboard but not in Zalo, check the per-bot `.undelivered.jsonl` file after checking `reply_sent`. A populated undelivered file means the failure is specifically in outbound Zalo delivery, not the agent.
+- `outbox_enqueued` means the agent already produced a reply and the bridge persisted it before checkpointing the inbound update.
+- `send_attempt_failed` means Zalo outbound delivery failed for one chunk. Check `status`, `responseCode`, and `preview`; the outbox worker retries before giving up.
+- `outbox_delivery_deferred` means the reply is still safe in `pending/` and will retry after `nextAttemptAt`.
+- `outbox_delivery_failed_permanently` means the job exceeded `ZALO_OUTBOX_MAX_ATTEMPTS` and was moved to `failed/` plus `.undelivered.jsonl`.
+- If a reply is visible in the OpenClaw dashboard but not in Zalo, run `zalo-bridge-outbox.sh --bot-key <bot-key>` after checking `reply_sent`. Pending jobs mean Zalo outbound is retrying; failed jobs can be requeued with `zalo-bridge-replay-failed.sh --bot-key <bot-key>` after the root cause is fixed.
 - If one bot works and another is silent, compare that bot's token/env path, process, PID, log, chat id, agent id, and session key independently. Do not assume the global bridge state applies to all bots.
 - If all bots are managed by one process and one bot failure blocks the others, split back into isolated bridge processes.
 - If another OpenClaw instance installs the skill but it does not trigger, run `openclaw skills check`, confirm the skill path/agent target, and inspect `openclaw skills info connect-zalo-agent-bridge --agent <target-agent-id>`.

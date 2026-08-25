@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 Environment=ZALO_BRIDGE_ENV_FILE=__ENV_FILE__
 Environment=ZALO_CHECKPOINT_FILE=__CHECKPOINT_FILE__
+Environment=ZALO_OUTBOX_DIR=__OUTBOX_DIR__
 Environment=ZALO_UNDELIVERED_FILE=__UNDELIVERED_FILE__
 ExecStart=/usr/bin/env node __BRIDGE_FILE__
 Restart=always

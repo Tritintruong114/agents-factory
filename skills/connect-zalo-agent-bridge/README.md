@@ -44,6 +44,7 @@ The installer creates:
 /home/node/.openclaw/zalo-kien-truc-su-bridge.pid
 /home/node/.openclaw/logs/zalo-kien-truc-su-bridge.log
 /home/node/.openclaw/zalo-kien-truc-su-bridge.offset.json
+/home/node/.openclaw/zalo-kien-truc-su-bridge.outbox/
 /home/node/.openclaw/zalo-kien-truc-su-bridge.undelivered.jsonl
 /home/node/.openclaw/zalo-kien-truc-su-bridge.config
 /home/node/.openclaw/systemd/zalo-bridge-kien-truc-su.service
@@ -55,11 +56,18 @@ The installer creates:
 ./skills/connect-zalo-agent-bridge/scripts/zalo-bridge-status.sh --bot-key kien-truc-su
 ./skills/connect-zalo-agent-bridge/scripts/zalo-bridge-restart.sh --bot-key kien-truc-su
 ./skills/connect-zalo-agent-bridge/scripts/zalo-bridge-logs.sh --bot-key kien-truc-su -n 120
+./skills/connect-zalo-agent-bridge/scripts/zalo-bridge-outbox.sh --bot-key kien-truc-su
 ```
 
 Each command targets exactly one bot key.
 
-The bridge logs `agent_completed` after OpenClaw returns a reply and `reply_sent` only after all Zalo chunks are accepted. If outbound Zalo delivery fails, it logs `send_attempt_failed`, retries according to `ZALO_SEND_ATTEMPTS`, and appends the failed chunk to the per-bot `.undelivered.jsonl` file after the final attempt.
+The bridge logs `agent_completed` after OpenClaw returns a reply, writes the reply to the per-bot disk outbox, checkpoints the inbound Zalo update, and sends from the outbox in a background worker. It logs `reply_sent` only after all Zalo chunks are accepted. If outbound Zalo delivery fails, it logs `send_attempt_failed`, retries according to `ZALO_SEND_ATTEMPTS`, keeps the job in `pending/` with exponential backoff, and moves it to `failed/` plus `.undelivered.jsonl` only after `ZALO_OUTBOX_MAX_ATTEMPTS`.
+
+Replay failed jobs after fixing token, permissions, or Zalo availability:
+
+```bash
+./skills/connect-zalo-agent-bridge/scripts/zalo-bridge-replay-failed.sh --bot-key kien-truc-su
+```
 
 ## Tests That Do Not Send Messages
 
