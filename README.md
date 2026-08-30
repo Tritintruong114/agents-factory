@@ -12,6 +12,8 @@ Use this repo to keep those reusable building blocks portable between OpenClaw i
 
 ## Current Contents
 
+- `skills/customer-value-discovery/`
+  Reusable skill for discovering customer value from real behavior before proposing product features, agent capabilities, roadmap items, outreach, demos, or adoption plans. Includes a worksheet template and examples for B2B Sales Agent and Agent OS / Agent Marketplace discovery.
 - `skills/connect-zalo-agent-bridge/`  
   Reusable OpenClaw skill for connecting one or more Zalo bot bridge instances to OpenClaw agents. The default model is:
 - `skills/connect-zalo-agent-bridge/templates/zalo-polling-bridge.mjs`  
@@ -76,18 +78,21 @@ From another OpenClaw instance:
 
 ```bash
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --agent <agent-id> --as connect-zalo-agent-bridge
+openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --agent <agent-id> --as customer-value-discovery
 ```
 
 Or install globally for all agents in that instance:
 
 ```bash
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --global --as connect-zalo-agent-bridge
+openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --global --as customer-value-discovery
 ```
 
 Verify:
 
 ```bash
 openclaw skills info connect-zalo-agent-bridge --agent <agent-id>
+openclaw skills info customer-value-discovery --agent <agent-id>
 openclaw skills check --agent <agent-id>
 ```
 
@@ -111,6 +116,11 @@ Recommended structure as this factory grows:
 
 ```text
 skills/
+  customer-value-discovery/
+    SKILL.md
+    agents/
+    templates/
+    examples/
   connect-zalo-agent-bridge/
     SKILL.md
     README.md

@@ -1,0 +1,8 @@
+interface:
+  display_name: "Customer Value Discovery"
+  short_description: "Find customer value before features"
+  brand_color: "#2563EB"
+  default_prompt: "Use $customer-value-discovery to analyze this customer, feature, or agent idea through Need, Action, and Result phases."
+
+policy:
+  allow_implicit_invocation: true
