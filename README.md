@@ -14,6 +14,8 @@ Use this repo to keep those reusable building blocks portable between OpenClaw i
 
 - `skills/customer-value-discovery/`
   Reusable skill for discovering customer value from real behavior before proposing product features, agent capabilities, roadmap items, outreach, demos, or adoption plans. Includes a worksheet template and examples for B2B Sales Agent and Agent OS / Agent Marketplace discovery.
+- `skills/linkedin-decision-content/`
+  Reusable skill for creating LinkedIn Decision Content captions and single-image PNGs. Includes onboarding, draft templates, a 1080x1080 HTML/CSS image template, local Be Vietnam fonts, and a Chromium render script.
 - `skills/connect-zalo-agent-bridge/`  
   Reusable OpenClaw skill for connecting one or more Zalo bot bridge instances to OpenClaw agents. The default model is:
 - `skills/connect-zalo-agent-bridge/templates/zalo-polling-bridge.mjs`  
@@ -79,6 +81,7 @@ From another OpenClaw instance:
 ```bash
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --agent <agent-id> --as connect-zalo-agent-bridge
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --agent <agent-id> --as customer-value-discovery
+openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --agent <agent-id> --as linkedin-decision-content
 ```
 
 Or install globally for all agents in that instance:
@@ -86,6 +89,7 @@ Or install globally for all agents in that instance:
 ```bash
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --global --as connect-zalo-agent-bridge
 openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --global --as customer-value-discovery
+openclaw skills install git:https://github.com/Tritintruong114/agents-factory.git --global --as linkedin-decision-content
 ```
 
 Verify:
@@ -93,6 +97,7 @@ Verify:
 ```bash
 openclaw skills info connect-zalo-agent-bridge --agent <agent-id>
 openclaw skills info customer-value-discovery --agent <agent-id>
+openclaw skills info linkedin-decision-content --agent <agent-id>
 openclaw skills check --agent <agent-id>
 ```
 
@@ -120,6 +125,14 @@ skills/
     SKILL.md
     agents/
     templates/
+    examples/
+  linkedin-decision-content/
+    SKILL.md
+    README.md
+    agents/
+    assets/
+    templates/
+    scripts/
     examples/
   connect-zalo-agent-bridge/
     SKILL.md

@@ -1,0 +1,8 @@
+interface:
+  display_name: "LinkedIn Decision Content"
+  short_description: "Create decision-led LinkedIn posts and PNGs"
+  brand_color: "#0F5B50"
+  default_prompt: "Use $linkedin-decision-content to turn this idea into a decision-led LinkedIn post and single-image PNG structure."
+
+policy:
+  allow_implicit_invocation: true

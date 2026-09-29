@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinkedIn Decision Content PNG</title>
+    <link rel="preload" href="../../assets/fonts/be-vietnam/be-vietnam-400.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="preload" href="../../assets/fonts/be-vietnam/be-vietnam-500.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="preload" href="../../assets/fonts/be-vietnam/be-vietnam-600.ttf" as="font" type="font/ttf" crossorigin>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="post" aria-label="LinkedIn decision content PNG">
+      <header class="post-header">
+        <img class="avatar" data-avatar alt="">
+        <div class="identity">
+          <p class="name" data-name></p>
+          <p class="meta"><span data-headline></span></p>
+        </div>
+      </header>
+
+      <section class="copy">
+        <h1 data-title></h1>
+        <p class="lead">
+          <span data-context></span>
+          <strong data-quote></strong>
+        </p>
+        <div class="brief-list" data-bullets></div>
+        <p class="closing" data-closing></p>
+      </section>
+
+      <footer class="actions" aria-label="LinkedIn action row">
+        <div class="action">
+          <svg class="share-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12v7h16v-7"></path>
+            <path d="M12 16V5"></path>
+            <path d="m7 10 5-5 5 5"></path>
+          </svg>
+          <span>Share</span>
+        </div>
+        <div class="action save">
+          <svg class="save-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1Z"></path>
+          </svg>
+          <span>Save</span>
+        </div>
+      </footer>
+    </main>
+
+    <script src="./linkedin-data.js"></script>
+    <script>
+      const card = window.LINKEDIN_CARD;
+      document.querySelector("[data-avatar]").src = card.profile.avatarSrc;
+      document.querySelector("[data-avatar]").alt = card.profile.name;
+      document.querySelector("[data-name]").textContent = card.profile.name;
+      document.querySelector("[data-headline]").textContent = card.profile.headline;
+      document.querySelector("[data-title]").textContent = card.content.title;
+      document.querySelector("[data-context]").textContent = card.content.context;
+      document.querySelector("[data-quote]").textContent = `“${card.content.quote}”`;
+      document.querySelector("[data-closing]").textContent = card.content.closing;
+
+      const bullets = document.querySelector("[data-bullets]");
+      bullets.innerHTML = card.content.bullets
+        .map((item, index) => `<p><span>${index + 1}</span> ${escapeHtml(item)}</p>`)
+        .join("");
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
