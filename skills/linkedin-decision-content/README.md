@@ -24,6 +24,45 @@ Context ngắn
 Closing rõ lực
 ```
 
+## Complete Example
+
+Example caption:
+
+```text
+Nhiều doanh nghiệp tưởng mình đang thử AI Agent.
+
+Thật ra họ chỉ đang thử output.
+
+Một prompt hay có thể tạo ra một bài viết, một email, một bản tóm tắt. Nhưng nó chưa chứng minh rằng Agent có thể vận hành được trong business.
+
+Câu hỏi đúng không phải là:
+"AI viết được gì?"
+
+Câu hỏi đúng hơn là:
+"Phần nào trong workflow có thể được giao cho Agent với input, điểm duyệt, tiêu chuẩn kết quả và ranh giới rủi ro rõ ràng?"
+
+Trước khi thử một Agent, hãy kiểm tra 5 điểm:
+
+1. Việc này có lặp lại đủ nhiều không?
+2. Input đầu vào có rõ không?
+3. Output tốt/xấu được đánh giá bằng tiêu chí nào?
+4. Chỗ nào bắt buộc con người duyệt?
+5. Nếu Agent làm sai, rủi ro nằm ở đâu?
+
+Prompt tạo demo.
+Workflow mới tạo được vận hành.
+```
+
+Example single-image PNG:
+
+![Decision content LinkedIn example](examples/decision-content-ai-agent-workflow.png)
+
+Source notes for this example live in:
+
+```text
+examples/decision-content-ai-agent-workflow.md
+```
+
 ## End-User Requirements
 
 Minimum intake:
